@@ -24,8 +24,6 @@ try:
 except ModuleNotFoundError:
   # The relative path is under the home directory.
   import sys
-  import os
-
   relativePaths = [os.path.join(".", "ioutracker", "dataloaders"),
                    os.path.join(".", "dataloaders"),
                    os.path.join(".", "ioutracker", "src"),
@@ -33,6 +31,7 @@ except ModuleNotFoundError:
   for rPath in relativePaths:
     sys.path.append(rPath)
 
+  from Helpers import detections_transform
   from IOUTracker import IOUTracker
   from MOTDataLoader import loadLabel
 
@@ -122,7 +121,7 @@ def outputAsFramesToVideo(detection_conf, iou_threshold, min_t, track_min_conf,
         # act_track_ped: [bX1, bY1, bW, bH, Visible]
         act_track_ped = act_track.previous_detections()
         # [bX1, bY1, bW, bH, Visible] -> [bX1, bY1, bX2, bY2]
-        act_track_ped_coord = IOUTracker.detections_transform(act_track_ped)
+        act_track_ped_coord = detections_transform(act_track_ped)
         x1, y1, x2, y2 = np.array(act_track_ped_coord, dtype=int)
         cv2.rectangle(img, (x1, y1), (x2, y2), COLOR_LIST[act_track.tid], 2)
         text_x = x1
@@ -156,6 +155,6 @@ def outputAsFramesToVideo(detection_conf, iou_threshold, min_t, track_min_conf,
 
 if __name__ == "__main__":
 
-  logging.basicConfig(level=logging.info)
+  logging.basicConfig(level=logging.INFO)
 
   pass

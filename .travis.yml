@@ -8,5 +8,6 @@ install:
   - pip install -e .
 # command to run tests
 script:
+  - python -m ioutracker.src.HelpersTests
   - python -m ioutracker.src.IOUTrackerTests
   - python -m ioutracker.metrics.MOTMetricsTests

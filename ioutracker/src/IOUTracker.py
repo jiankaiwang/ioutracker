@@ -17,37 +17,18 @@
 import logging
 import numpy as np
 
-# In[]:
+try:
+  from ioutracker import BBoxIOU, detections_transform, Hungarian
+except Exception:
+  import os
+  import sys
+  # The relative path is under the home directory.
+  relativePaths = [os.path.join(".", "ioutracker", "src"),
+                   os.path.join(".", "src")]
+  for rPath in relativePaths:
+    sys.path.append(rPath)
 
-def BBoxIOU(boxA, boxB):
-  """BBoxIOU implements the IOU ratio.
-
-  Args:
-    boxA: the first bbox in shape (4,) of (x1, y1, x2, y2)
-    boxB: the second bbox in shape (4,) of (x1, y1, x2, y2)
-
-  Returns:
-    iou: a float value represents the IOU ratio
-  """
-  iou = 0.0
-
-  # determine the coordinates of the intersection rectangle
-  xA = max(boxA[0], boxB[0])
-  yA = max(boxA[1], boxB[1])
-  xB = min(boxA[2], boxB[2])
-  yB = min(boxA[3], boxB[3])
-
-  # compute the area of the intersection area
-  interArea = max(0, xB - xA + 1e-6) * max(0, yB - yA + 1e-6)
-
-  # compute the area of both the prediction and ground-truth rectangle
-  boxAArea = (boxA[2] - boxA[0] + 1e-6) * (boxA[3] - boxA[1] + 1e-6)
-  boxBArea = (boxB[2] - boxB[0] + 1e-6) * (boxB[3] - boxB[1] + 1e-6)
-
-  # calculate the iou based on the set theory
-  iou = float(interArea) / float(boxAArea + boxBArea - interArea)
-
-  return iou
+  from Helpers import BBoxIOU, detections_transform, Hungarian
 
 # In[]
 
@@ -214,24 +195,6 @@ class IOUTracker():
     available_detections = detections[available_idx].tolist()
     return available_detections
 
-  @staticmethod
-  def detections_transform(detection):
-    """detections_transform transforms coordinates into [bX1, bY1, bX2, bY2].
-
-    Args:
-      detections: [bX, bY, bWidth, bHeight, visible]
-
-    Returns:
-      transformed_detections: [bX1, bY1, bX2, bY2]
-    """
-    if len(detection) < 4:
-      return detection
-    x1 = detection[0]
-    y1 = detection[1]
-    x2 = detection[0] + detection[2]
-    y2 = detection[1] + detection[3]
-    return [x1, y1, x2, y2]
-
   def read_detections_per_frame(self, detections):
     """read_detections_per_frame: start to parse the detections per frame.
 
@@ -250,10 +213,10 @@ class IOUTracker():
     for act_track in self.active_tracks:
       # [bX, bY, bW, bH, visible] -> [bX, bY, bX+bW, bY+bH, visible]
       act_track_last_obj = act_track.previous_detections()
-      act_track_last_obj = IOUTracker.detections_transform(act_track_last_obj)
+      act_track_last_obj = detections_transform(act_track_last_obj)
 
       detections_iou = [BBoxIOU(act_track_last_obj,
-                                IOUTracker.detections_transform(detection)) \
+                                detections_transform(detection)) \
                         for detection in detections]
       if len(detections_iou) < 1:
         # solve no detections available
