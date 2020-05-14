@@ -20,7 +20,7 @@ import subprocess
 import tqdm
 
 try:
-  from ioutracker import IOUTracker, loadLabel
+  from ioutracker import detections_transform, IOUTracker, loadLabel
 except ModuleNotFoundError:
   # The relative path is under the home directory.
   import sys
@@ -97,10 +97,10 @@ def outputAsFramesToVideo(detection_conf, iou_threshold, min_t, track_min_conf,
     # iou tracker
     iouTracks.read_detections_per_frame(detections=labels[label])
 
-    active_tacks = iouTracks.get_active_tracks()
+    active_tracks = iouTracks.get_active_tracks()
     finished_tracks = iouTracks.get_finished_tracks()
 
-    logging.debug("Active tracks: {}".format(len(active_tacks)))
+    logging.debug("Active tracks: {}".format(len(active_tracks)))
     logging.debug("Finished tracks: {}".format(len(finished_tracks)))
 
     if plotting:
@@ -110,7 +110,7 @@ def outputAsFramesToVideo(detection_conf, iou_threshold, min_t, track_min_conf,
       assert os.path.exists(img_path)
 
       img = cv2.imread(filename=img_path)
-      for act_track in active_tacks:
+      for act_track in active_tracks:
         if not act_track.tid:
           # assign track id to use the color
           act_track.tid = tid_count

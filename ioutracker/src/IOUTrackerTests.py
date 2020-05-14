@@ -41,6 +41,32 @@ class FuncTest(unittest.TestCase):
       assert np.array_equiv(np.array(res), np.array(ans)), \
         "Result {} is not the same to {}.".format(res, ans)
 
+  def testIOUTracker(self):
+    """testIOUTracker tests the functionality of IOUTracker."""
+    testCases = [[[10, 10, 10, 10, 0.8], [30, 30, 10, 10, 0.9], [10, 50, 10, 10, 0.7]],
+                 [[11, 11, 10, 10, 0.85], [11, 49, 10, 10, 0.8]],
+                 []]
+    testDetRes = [[{"tid": 1,  "numFrames": 1, "largerThanMinT": True},
+                   {"tid": 2,  "numFrames": 1, "largerThanMinT": True},
+                   {"tid": 3,  "numFrames": 1, "largerThanMinT": True}],
+                  [{"tid": 1,  "numFrames": 2, "largerThanMinT": True},
+                   {"tid": 3,  "numFrames": 2, "largerThanMinT": True}],
+                  []]
+    testFinisheds = [[{}],
+                     [{"ftid": 2,  "numFrames": 1, "largerThanMinT": True}],
+                     [{"ftid": 2,  "numFrames": 1, "largerThanMinT": True},
+                      {"ftid": 1,  "numFrames": 2, "largerThanMinT": True},
+                      {"ftid": 3,  "numFrames": 2, "largerThanMinT": True}]]
+
+    iouTracker = IOUTracker()
+    for case, det, finished in zip(testCases, testDetRes, testFinisheds):
+      detected_tracks, finished_tracks = iouTracker(case, returnFinishedTrackers=True)
+
+      assert np.array_equiv(np.array(det), np.array(detected_tracks)), \
+        "(Active Tracks) Result {} is not the same to {}.".format(det, detected_tracks)
+      assert np.array_equiv(np.array(finished), np.array(finished_tracks)), \
+        "(Finished Tracks) Result {} is not the same to {}.".format(finished, finished_tracks)
+
 # In[]
 
 if __name__ == "__main__":

@@ -136,8 +136,12 @@ class IOUTracker():
   active_tracks = []
   finished_tracks = []
 
-  def __init__(self, detection_conf=0.5, iou_threshold=0.5, min_t = 1,
-               track_min_conf=0.5):
+  __assignedTID = True
+  __tidIncrement = 1
+  __matchingMethod = None
+
+  def __init__(self, detection_conf=0.2, iou_threshold=0.5, min_t = 1,
+               track_min_conf=0.2, assignedTID=True):
     """Constructor.
 
     Args:
@@ -148,6 +152,8 @@ class IOUTracker():
       min_t: the track is filtered out when its length is shorter than min_t
       track_min_conf (sigma_h): the track is filtered out when all of its detections'
                                 confident scores are less than the track_min_conf
+      assignedTID: the flag to automatically assign a tracker ID to a track,
+                   if it is set to False, you can assign a customized TID later
     """
     self.__detection_conf = detection_conf
     self.__iou_threshold = iou_threshold
@@ -155,6 +161,10 @@ class IOUTracker():
     self.__track_min_conf = track_min_conf
     self.active_tracks = []
     self.finished_tracks = []
+
+    self.__assignedTID = assignedTID
+    self.__tidIncrement = 1
+    self.__matchingMethod = Hungarian()
 
   @property
   def detection_conf(self):
@@ -240,6 +250,9 @@ class IOUTracker():
     # start a new track with the remained detections
     for detection in detections:
       new_track = Track(min_t=self.__min_t)
+      if self.__assignedTID:
+        new_track.tid = self.__tidIncrement
+        self.__tidIncrement += 1
       new_track.add_detection(detection)
       self.active_tracks.append(new_track)
 
@@ -267,6 +280,93 @@ class IOUTracker():
     """clear_finished_tracks cleans finished tracks."""
     del self.finished_tracks
     self.finished_tracks = []
+
+  def __releaseUsr(self):
+    """__releaseUsr released all resources used in this object."""
+    del self.__detection_conf
+    del self.__iou_threshold
+    del self.__min_t
+    del self.__track_min_conf
+    del self.active_tracks
+    del self.finished_tracks
+    del self.__assignedTID
+    del self.__tidIncrement
+
+  def __del__(self):
+    """Delete this object."""
+    self.__releaseUsr()
+
+  def __call__(self, detections, returnFinishedTrackers=False):
+    """Runs the IOU tracker algorithm across the consecutive frames.
+
+    Args:
+      detections: a list contains multiple detections per frame, each detection
+                  keeps [[bX, bY, bWidth, bHeight, visible], [], []]
+
+      returnFinishedTrackers: a bool for returning finished trackers
+
+    Returns:
+      detectionMapping: a list contains multiple dictionary-structure objects
+                        representing each detection, the order of those objects
+                        is the same to the detection, the prototype is like
+
+                        [{"tid": value, "numFrames": value, "largerThanMinT": Bool}]
+
+                        in which numFrames is the number of objects in the history
+                        , and largerThanMinT is a bool value for the numFrames larger
+                        than min_t, if tid == -1, it represents this detection is
+                        unassigned
+      finishedTrackers: (optional)
+                        a list contains multiple dictionary-structure objects
+                        representing each finished tracks, the prototype is like
+
+                        [{"ftid": value, "numFrames": value, "largerThanMinT": Bool}]
+
+                        in which the finishedTrackers is similar to the detectionMapping
+                        , the difference are that in finishedTrackers ftid is
+                        finished tid and finishedTrackers keeps all finished
+                        trackers from the beginning
+    """
+    detectionsCopy = detections.copy()
+
+    # run the IOU trackers
+    self.read_detections_per_frame(detections)
+    active_tracks = self.get_active_tracks()
+    addedDetections = [activeTrack.previous_detections() for activeTrack in active_tracks]
+
+    # assignment between the all detections and added ones
+    # assignmentTable whose row is addedDetection and whose col is detectionsCopy
+    detectionMapping = []
+
+    if len(detectionsCopy) > 0:
+      # if detection is empty, no need to parse active trackers
+      _, assignmentTable = self.__matchingMethod(detectionsCopy, addedDetections)
+      matching = assignmentTable.apply(lambda col: np.where(col), axis=0)
+
+      for detectionsIdx in list(matching.index):
+        matchingRes = list(matching[detectionsIdx][0])
+        if len(matchingRes) < 1:
+          # this is an unassigned detection, e.g. probability too low
+          detectionRes = {"tid": -1, "numFrames": 0, "largerThanMinT": False}
+        else:
+          matchingIdx = matchingRes[0]
+          assignedDetection = active_tracks[matchingIdx]
+          larger_than_t, total_t = assignedDetection.larger_than_min_t()
+          detectionRes = {"tid": assignedDetection.tid,
+                          "numFrames": total_t,
+                          "largerThanMinT": larger_than_t}
+        detectionMapping.append(detectionRes)
+
+    finishedTrackers = []
+    if returnFinishedTrackers:
+      for finished in self.get_finished_tracks():
+        larger_than_t, total_t = finished.larger_than_min_t()
+        finishedRes = {"ftid": finished.tid,
+                       "numFrames": total_t,
+                       "largerThanMinT": larger_than_t}
+        finishedTrackers.append(finishedRes)
+
+    return detectionMapping, finishedTrackers
 
 # In[]:
 

@@ -18,7 +18,7 @@ import pandas as pd
 import unittest
 
 try:
-  from ioutracker import Hungarian
+  from ioutracker import BBoxIOU, detections_transform, Hungarian
 except Exception:
   # The relative path is under the home directory.
   relativePaths = [os.path.join(".", "ioutracker", "src"),
@@ -26,8 +26,8 @@ except Exception:
   for rPath in relativePaths:
     sys.path.append(rPath)
 
-  from Helpers import Hungarian, BBoxIOU, detections_transform
-  
+  from Helpers import BBoxIOU, detections_transform, Hungarian
+
 # In[]
 
 class FuncTest(unittest.TestCase):
@@ -53,7 +53,7 @@ class FuncTest(unittest.TestCase):
     for case, ans in zip(testCase, testAns):
       res = detections_transform(case)
       assert np.array_equal(res, ans), \
-        "Result {} is not the same to {}.".format(res, ans)  
+        "Result {} is not the same to {}.".format(res, ans)
 
 # In[]
 
