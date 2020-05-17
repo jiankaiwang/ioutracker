@@ -10,7 +10,8 @@ On the other hand, such an algorithm requires an evaluation. The evaluation of t
 
 * This implementation uses MOT17Det dataset (https://motchallenge.net/data/MOT17Det/) as an example.
 * More information please refer to https://github.com/jiankaiwang/ioutracker.
-* More example videos please refer to .
+* The example videos:
+[![](https://img.youtube.com/vi/k_5BvwrhNLw/0.jpg)](https://www.youtube.com/watch?v=k_5BvwrhNLw).
 
 ## Install
 

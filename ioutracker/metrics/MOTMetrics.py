@@ -242,7 +242,7 @@ class GTTrajectory():
   """GTTrajectory simulates the trajectory of the ground truth."""
 
   __frameCheck = False
-  __trackerID = ""
+  __trackerID = None
   __gtUID = ""
   __numSwitchID = 0
   __numFragments = 0
@@ -258,7 +258,7 @@ class GTTrajectory():
       uid: the unique ID of this ground truth trajectory
     """
     self.__frameCheck = False
-    self.__trackerID = ""
+    self.__trackerID = None
     self.__gtUID = uid
     self.__numSwitchID = 0
     self.__numFragments = 0
@@ -337,9 +337,10 @@ class GTTrajectory():
 
                    {x | a list, None}
 
-      assignedTID: the assigned tracker to this ground-truth trajectory, it is a string
+      assignedTID: the assigned tracker to this ground-truth trajectory, it is
+                   recommended as an integer or a string
 
-                   {x | a string, None}
+                   {x | a int, None}
     """
     if groundTruth:
       # add the ground-truth object
@@ -348,7 +349,7 @@ class GTTrajectory():
       # count the frame
       self.__frameCount += 1
 
-      if not assignedTID:
+      if assignedTID is None:
         # FN, fragment is always set to True, no matter wether the fragment
         # is set to True (fragment continues) or False (fragment begins)
         self.__fragment = True
@@ -372,12 +373,13 @@ class GTTrajectory():
 
       # if there is no fragment, no more action to take
     else:
-      # tracker changed
-      if self.__fragment:
-        # a fragment is also available
-        self.__numFragments += 1
-        self.__numSwitchID += 1
-      else:
+      if self.__trackerID is not None:
+      # prevent from the first assignment
+
+        # tracker changed
+        if self.__fragment:
+          # a fragment is also available
+          self.__numFragments += 1
         # no fragment exists
         self.__numSwitchID += 1
 
@@ -426,9 +428,10 @@ class EvaluateByFrame():
   __gtTrajectoryDict = {}  # {uid: GTTrajectory.Object}
   __filteredProbability = 0.0
   __tidCount = 1
+  __requiredTracking = True
 
   def __init__(self, detection_conf=0.2, iouThreshold=0.2, min_t = 1,
-               track_min_conf=0.5):
+               track_min_conf=0.5, requiredTracking=True):
     """Constrcutor.
 
     Args:
@@ -439,6 +442,9 @@ class EvaluateByFrame():
       min_t: the track is filtered out when its length is shorter than min_t
       track_min_conf (sigma_h): the track is filtered out when all of its detections'
                                 confident scores are less than the track_min_conf
+      requiredTracking: whether to run the IOUTracker to get the tracker ID.
+                        If it is set to False, it will be going to use the
+                        evaluateOnPredsWithTrackerID().
     """
     self.__numGT = 0
     self.__numTP = 0
@@ -446,16 +452,18 @@ class EvaluateByFrame():
     self.__numFN = 0
     self.__hungarian = Hungarian()
     self.__cm = ConfusionMatrix(iouThreshold=iouThreshold)
-    self.__iouTracker = IOUTracker(detection_conf=detection_conf,
-                                              iou_threshold=iouThreshold,
-                                              min_t=min_t,
-                                              track_min_conf=track_min_conf)
     self.__gtTrajectoryDict = {}
-    self.__filteredProbability = detection_conf
+    self.__requiredTracking = requiredTracking
 
     # initializations
-    # start index of the tracker is 1
-    self.__tidCount = 1
+    if self.__requiredTracking:
+      self.__filteredProbability = detection_conf
+      self.__iouTracker = IOUTracker(detection_conf=detection_conf,
+                                                iou_threshold=iouThreshold,
+                                                min_t=min_t,
+                                                track_min_conf=track_min_conf)
+      # start index of the tracker is 1
+      self.__tidCount = 1
 
   def __call__(self, groundTruth, prediction):
     """Run the whole flow.
@@ -467,82 +475,104 @@ class EvaluateByFrame():
                    a list contains the BBox information on each frame like
                    [[X1, Y1, W, H, Prob.], [X1, Y1, W, H, Prob.]]
     """
-    # filter the prediction whose probabilities are lower than the threshold
-    predArray = np.array(prediction)
-    predIndexes = predArray[:, 4] >= self.__filteredProbability
-    filterPreds = predArray[predIndexes].tolist()
+    if self.__requiredTracking:
+      raise Exception("You initialized the object with wrong parameters, requiredTracking must be True.")
 
-    # the filtered prediction (probability is lower than the threshold) is the false positive
-    self.__numFP += (len(predArray) - predIndexes.astype('int').sum())
+    lenGT = 0 if np.array_equal(groundTruth, [[]]) else len(groundTruth)
+    lenPred = 0 if np.array_equal(prediction, [[]]) else len(prediction)
 
-    # make a hungarian distribution
-    iouTable, assignmentTable = self.__hungarian(groundTruth, filterPreds)
+    if lenPred > 0:
+      # filter the prediction whose probabilities are lower than the threshold
+      predArray = np.array(prediction)
+      predIndexes = predArray[:, 4] >= self.__filteredProbability
+      filterPreds = predArray[predIndexes].tolist()
 
-    # get the number of TP, FP, and FN
-    _, tpList, fpList, fnList = self.__cm(iouTable, assignmentTable)
+      # the filtered prediction (probability is lower than the threshold) is the false positive
+      self.__numFP += (len(predArray) - predIndexes.astype('int').sum())
 
-    self.__numTP += len(tpList)
-    self.__numFP += len(fpList)
-    self.__numFN += len(fnList)
+    if lenGT > 0 and lenPred > 0:
+      # make a hungarian distribution
+      iouTable, assignmentTable = self.__hungarian(groundTruth, filterPreds)
 
-    # here we use the filtered ground truth objects by the probability (or visibility)
-    # not the total ground truth
-    self.__numGT += len(tpList) + len(fnList)
+      # get the number of TP, FP, and FN
+      _, tpList, fpList, fnList = self.__cm(iouTable, assignmentTable)
 
-    # start the tracking algorithm
-    self.__iouTracker.read_detections_per_frame(filterPreds)
-    activeTracks = self.__iouTracker.get_active_tracks()
-    addedDetections = []
-    for track in activeTracks:
-      if not track.tid:
-        track.tid = self.__tidCount
-        self.__tidCount += 1
-      # get all added detections
-      addedDetections.append(track.previous_detections())
-    assert len(addedDetections) == len(filterPreds), \
-      "The number of detections ({}) is not the same to the number of filtered prediction ({}).".format(\
-      len(addedDetections),len(filterPreds))
+      self.__numTP += len(tpList)
+      self.__numFP += len(fpList)
+      self.__numFN += len(fnList)
 
-    # groundTruth contains the ground truth with its self UID, or the GT trajectory
-    # addedDetections represents the information to the tracker ID
-    # the connection between the ground truth and the prediction is the filterPreds
-    # rows: filterPreds, cols: ground truth
-    tableGTFilter = assignmentTable
-    # rows: addedDetections, cols: filterPreds
-    _, tableFilterAdded = self.__hungarian(filterPreds, addedDetections)
+      # here we use the filtered ground truth objects by the probability (or visibility)
+      # not the total ground truth
+      self.__numGT += len(tpList) + len(fnList)
+
+    if lenPred > 0:
+      # start the tracking algorithm
+      self.__iouTracker.read_detections_per_frame(filterPreds)
+      activeTracks = self.__iouTracker.get_active_tracks()
+      addedDetections = []
+      for track in activeTracks:
+        if not track.tid:
+          track.tid = self.__tidCount
+          self.__tidCount += 1
+        # get all added detections
+        addedDetections.append(track.previous_detections())
+      assert len(addedDetections) == len(filterPreds), \
+        "The number of detections ({}) is not the same to the number of filtered prediction ({}).".format(\
+        len(addedDetections),len(filterPreds))
+
+    if lenGT > 0 and lenPred > 0:
+      # groundTruth contains the ground truth with its self UID, or the GT trajectory
+      # addedDetections represents the information to the tracker ID
+      # the connection between the ground truth and the prediction is the filterPreds
+      # rows: filterPreds, cols: ground truth
+      tableGTFilter = assignmentTable
+
+    if lenPred > 0:
+      # rows: addedDetections, cols: filterPreds
+      _, tableFilterAdded = self.__hungarian(filterPreds, addedDetections)
 
     # assign the ground truth trajectory
     for key, _ in self.__gtTrajectoryDict.items():
       # initialize the flag for processing the frame information
       self.__gtTrajectoryDict[key].frameCheck = False
-    for gtIdx in range(0, len(groundTruth), 1):
-      gt = groundTruth[gtIdx]
-      try:
-        gtUID = int(gt[5])
-      except:
-        raise ValueError("Ground Truth UID {} was not an int.".format(gt[5]))
-      allUIDs = list(self.__gtTrajectoryDict.keys())
-      if gtUID not in allUIDs:
-        newGTTrajectory = GTTrajectory(uid=gtUID)
-        self.__gtTrajectoryDict[gtUID] = newGTTrajectory
 
-      gtSeries = tableGTFilter.loc[:, gtIdx]
-      gt2Preds = (gtSeries == 1)
-      gt2PredsAvail = gt2Preds.astype('int').sum() > 0
+    if lenGT > 0:
+      for gtIdx in range(0, len(groundTruth), 1):
+        gt = groundTruth[gtIdx]
+        # it is not required to be an integer
+        gtUID = gt[5]
+        assert type(gtUID) in [int, str], "The ground truth UID must be an integer or a string."
+        allUIDs = list(self.__gtTrajectoryDict.keys())
+        if gtUID not in allUIDs:
+          newGTTrajectory = GTTrajectory(uid=gtUID)
+          self.__gtTrajectoryDict[gtUID] = newGTTrajectory
 
-      if gt2PredsAvail:
-        # both the ground truth and the tracker are available
-        gt2PredsIdx = gtSeries[gt2Preds].index[0]
-        filterPredSeries = tableFilterAdded.loc[:, gt2PredsIdx] == 1
-        filterPred2Detn = filterPredSeries[filterPredSeries].index[0]
-        assignedTID = activeTracks[filterPred2Detn].tid
-        self.__gtTrajectoryDict[gtUID](gt, assignedTID)
-      else:
-        # the ground truth is available, but no prediction
-        # (== no detection == no tracker)
-        self.__gtTrajectoryDict[gtUID](gt, "")
-      # the ground truth trajectory was processed
-      self.__gtTrajectoryDict[gtUID].frameCheck = True
+        if lenPred > 0:
+          gtSeries = tableGTFilter.loc[:, gtIdx]
+          gt2Preds = (gtSeries == 1)
+          gt2PredsAvail = gt2Preds.astype('int').sum() > 0
+
+          if gt2PredsAvail:
+            # both the ground truth and the tracker are available
+            gt2PredsIdx = gtSeries[gt2Preds].index[0]
+            filterPredSeries = tableFilterAdded.loc[:, gt2PredsIdx] == 1
+            filterPred2Detn = filterPredSeries[filterPredSeries].index[0]
+            assignedTID = activeTracks[filterPred2Detn].tid
+            assert type(assignedTID) in [int, str], "The tracker UID must be an integer or a string."
+            self.__gtTrajectoryDict[gtUID](gt, assignedTID)
+          else:
+            # the ground truth is available, but no prediction
+            # (== no detection == no tracker)
+            self.__gtTrajectoryDict[gtUID](gt, None)
+        else:
+          # no prediction available
+          self.__gtTrajectoryDict[gtUID](gt, None)
+
+        # the ground truth trajectory was processed
+        self.__gtTrajectoryDict[gtUID].frameCheck = True
+    else:
+      # unnecessary matching a tracker ID when it is no ground truth available
+      pass
 
     # the ground truth is not processed, this causes a fragment
     # in other words, no ground truth object is added to the trajectory
@@ -550,8 +580,129 @@ class EvaluateByFrame():
     # no need to handle the condition that no ground truth, but the tracker exists
     for key, _ in self.__gtTrajectoryDict.items():
       if not self.__gtTrajectoryDict[key].frameCheck:
-        self.__gtTrajectoryDict[key]([], "")
+        self.__gtTrajectoryDict[key]([], None)
         self.__gtTrajectoryDict[key].frameCheck = True
+
+  def evaluateOnPredsWithTrackerID(self, groundTruth, prediction):
+    """Run the whole flow.
+
+       Similar to the caller, this function takes a ground truth
+       and a prediction result. The difference between this function and the caller
+       is the tracker ID. it is generated on the caller, but it is available in
+       this function.
+       This function is mainly used on evaluating a prediction from the other
+       model or algorithm.
+
+    Args:
+      groundTruth: a list contains the BBox information on each frame.
+                   Here, we recommended using the MOTDataLoader object.
+      prediction: the bbox information predicted by another model, and which is
+                   a list contains the BBox information on each frame like
+                   [[X1, Y1, W, H, Prob., TID], [X1, Y1, W, H, Prob., TID]]
+    """
+    if self.__requiredTracking:
+      logging.warning("You initialized the object with wrong parameters, requiredTracking should be False.")
+
+    lenGT = 0 if np.array_equal(groundTruth, [[]]) else len(groundTruth)
+    lenPred = 0 if np.array_equal(prediction, [[]]) else len(prediction)
+
+    if lenGT > 0 and lenPred > 0:
+      # make a hungarian distribution, and it is only available while
+      # both ground truth and prediction each contains more than one element
+      iouTable, tableGTFilter = self.__hungarian(groundTruth, prediction)
+
+      # get the number of TP, FP, and FN
+      _, tpList, fpList, fnList = self.__cm(iouTable, tableGTFilter)
+
+      self.__numTP += len(tpList)
+      self.__numFP += len(fpList)
+      self.__numFN += len(fnList)
+
+      # here we use the filtered ground truth objects by the probability (or visibility)
+      # not the total ground truth
+      self.__numGT += len(tpList) + len(fnList)
+    elif lenGT > 0:
+      # prediction is empty, increasing false negatives
+      self.__numFN += lenGT
+      self.__numGT += lenGT
+    elif lenPred > 0:
+      # ground truth is empty, increasing false positives
+      self.__numFP += lenPred
+    # skip the true negatives
+
+    # initialize each GT trajectory
+    for key, _ in self.__gtTrajectoryDict.items():
+      # initialize the flag for processing the frame information
+      self.__gtTrajectoryDict[key].frameCheck = False
+
+    if lenGT > 0:
+      # only consider the condition while ground truth is available
+      # the prediction for the tracker is unnecessary to add the detections
+      # because in this function, it is under the condition that the tracker ID
+      # is provided
+
+      if lenPred > 0:
+        # create an identity matrix for the matching
+        tableFilterAdded = pd.DataFrame(np.eye(lenPred, dtype=np.int))
+
+      # assign the ground truth trajectory
+      for gtIdx in range(0, lenGT, 1):
+        gt = groundTruth[gtIdx]
+        gtUID = gt[5]
+        assert type(gtUID) in [int, str], "The ground truth UID must be an integer or a string."
+        allUIDs = list(self.__gtTrajectoryDict.keys())
+        if gtUID not in allUIDs:
+          newGTTrajectory = GTTrajectory(uid=gtUID)
+          self.__gtTrajectoryDict[gtUID] = newGTTrajectory
+
+        if lenPred > 0:
+          gtSeries = tableGTFilter.loc[:, gtIdx]
+          gt2Preds = (gtSeries == 1)
+          gt2PredsAvail = gt2Preds.astype('int').sum() > 0
+
+          if gt2PredsAvail:
+            # both the ground truth and the tracker are available
+            gt2PredsIdx = gtSeries[gt2Preds].index[0]
+            filterPredSeries = tableFilterAdded.loc[:, gt2PredsIdx] == 1
+            filterPred2Detn = filterPredSeries[filterPredSeries].index[0]
+
+            try:
+              # get the fifth element that represents the tracker ID
+              assignedTID = prediction[filterPred2Detn][5]
+              assert type(assignedTID) in [int, str], "The tracker UID must be an integer or a string."
+            except Exception:
+              raise IndexError("Each prediction element requires a tracker ID.")
+            self.__gtTrajectoryDict[gtUID](gt, assignedTID)
+          else:
+            # the ground truth is available, but no prediction
+            # (== no detection == no tracker)
+            self.__gtTrajectoryDict[gtUID](gt, None)
+        else:
+          # no prediction is available
+          self.__gtTrajectoryDict[gtUID](gt, None)
+
+        # the ground truth trajectory was processed
+        self.__gtTrajectoryDict[gtUID].frameCheck = True
+
+    # the ground truth is not processed, this causes a fragment
+    # in other words, no ground truth object is added to the trajectory
+    #
+    # no need to handle the condition that no ground truth, but the tracker exists
+    for key, _ in self.__gtTrajectoryDict.items():
+      if not self.__gtTrajectoryDict[key].frameCheck:
+        self.__gtTrajectoryDict[key]([], None)
+        self.__gtTrajectoryDict[key].frameCheck = True
+
+  def getAllGTTrajectory(self):
+    """Returns all ground truth trajectories.
+
+    Args: None
+
+    Returns:
+      a dictionary keeps each ground truth trajectory pair whose key is uid and
+      value is the GTTrajectory object
+    """
+    return self.__gtTrajectoryDict
 
   def __getGTTrajectoryResult(self):
     """getGTTrajectoryResult calculates the number of the fragments and the switch IDs.
@@ -618,6 +769,10 @@ class EvaluateByFrame():
 
     if printOnScreen:
       print("MOTA: {:3.6f}".format(mota))
+      print("FN: {}".format(fn))
+      print("FP: {}".format(fp))
+      print("IDSW: {}".format(idsw))
+      print("GT: {}".format(gt))
 
     return mota
 

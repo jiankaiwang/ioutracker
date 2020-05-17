@@ -160,7 +160,7 @@ class Hungarian():
       # get the number of zero value
       gtAxis = iouLabelCopy.apply(lambda col: np.count_nonzero(col), axis=0)
       # filled in the iouLabel table
-      matchGTIndexes = list(gtAxis[(gtAxis == found)].index)
+      matchGTIndexes = list(gtAxis[(gtAxis == foundValue)].index)
       for idx in matchGTIndexes:
         if np.any(iouLabelCopy.loc[:, idx]):
           # there are n-zeros
@@ -190,16 +190,33 @@ class Hungarian():
       gtIOULabel, gtLinesInfo, gtCountZero, gtCountLine = \
         __searchFromGT(iouLabel, found, linesInfo)
 
-      if predCountZero >= gtCountZero:
+      selectFrom = None
+      if predCountZero > gtCountZero:
+        selectFrom = "pred"
+      elif predCountZero < gtCountZero:
+        selectFrom = "gt"
+      elif numPreds > numGTs:
+        # predCountZero == gtCountZero, you should take the GT as the first priority
+        selectFrom = "gt"
+      elif numPreds < numGTs:
+        # predCountZero == gtCountZero, you should take the pred as the first priority
+        selectFrom = "pred"
+      elif numPreds == numGTs:
+        # predCountZero == gtCountZero, select from the pred as the default
+        selectFrom = "pred"
+
+      if selectFrom == "pred":
         iouLabel = predIOULabel
         countZero += predCountZero
         countLine += predCountLine
         linesInfo = predLinesInfo
-      else:
+      elif selectFrom == "gt":
         iouLabel = gtIOULabel
         countZero += gtCountZero
         countLine += gtCountLine
         linesInfo = gtLinesInfo
+      else:
+        raise Exception("Unexpected error while choosing from the ground truth or the prediction")
 
       if predCountZero == 0 and gtCountZero == 0:
         found -= 1

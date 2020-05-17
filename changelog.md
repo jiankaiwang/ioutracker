@@ -1,5 +1,17 @@
 # Change Log
 
+## Release 1.1.1
+
+### Major Features and Improvements
+
+* Update the class EvaluateByFrame and add a function evaluateOnPredsWithTrackerID to it. It allows evaluating the tracking result with the ground truth without the IOUTracker algorithm involved.
+
+### Bug Fixes and Other Changes
+
+* Fix a bug on the GTTrajectory class. Solve the first time adding the detection box, and it causes a IDSW.
+
+* Fix a bug on the additionApproach on the Hungarian class.
+
 ## Release 1.1.0
 
 IOU Tracker 1.1.0 improves easy-to-use functionality, including auto tracker ID increment and redesign metric and helper APIs.
