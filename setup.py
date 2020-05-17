@@ -31,7 +31,7 @@ with open(path.join(dirPath, "environ", "requirements.txt"), encoding='utf-8') a
 
 setup(
   name="ioutracker",
-  version="1.1.1",
+  version="1.2.0",
   description=long_desc,
   author="JianKai Wang",
   author_email="gljankai@gmail.com",

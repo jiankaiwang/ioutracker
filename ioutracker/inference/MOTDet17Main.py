@@ -82,8 +82,6 @@ def outputAsFramesToVideo(detection_conf, iou_threshold, min_t, track_min_conf,
                          min_t=min_t,
                          track_min_conf=track_min_conf)
 
-  tid_count = 1
-
   if plotting:
     # remove all images existing
     subprocess.call("rm -f {output}/*.jpg {output}/*.mp4".format(\
@@ -111,23 +109,17 @@ def outputAsFramesToVideo(detection_conf, iou_threshold, min_t, track_min_conf,
 
       img = cv2.imread(filename=img_path)
       for act_track in active_tracks:
-        if not act_track.tid:
-          # assign track id to use the color
-          act_track.tid = tid_count
-          tid_count += 1
-
-          if tid_count >= len(COLOR_LIST) - 20:
-            COLOR_LIST = COLOR_LIST + colors()
+        tid = act_track.tid % 300
         # act_track_ped: [bX1, bY1, bW, bH, Visible]
         act_track_ped = act_track.previous_detections()
         # [bX1, bY1, bW, bH, Visible] -> [bX1, bY1, bX2, bY2]
         act_track_ped_coord = detections_transform(act_track_ped)
         x1, y1, x2, y2 = np.array(act_track_ped_coord, dtype=int)
-        cv2.rectangle(img, (x1, y1), (x2, y2), COLOR_LIST[act_track.tid], 2)
+        cv2.rectangle(img, (x1, y1), (x2, y2), COLOR_LIST[tid], 2)
         text_x = x1
         text_y = int(y1*1.01)
         cv2.putText(img, "TID:{}".format(str(act_track.tid)), (text_x, text_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, COLOR_LIST[act_track.tid], 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, COLOR_LIST[tid], 1, cv2.LINE_AA)
 
       # add additional info about the video
       parainfo = ["Detection Conf: {:>4s}".format(str(detection_conf)), \

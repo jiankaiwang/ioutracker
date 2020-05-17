@@ -1,5 +1,21 @@
 # Change Log
 
+## Release 1.2.0
+
+### Major Features and Improvements
+
+* Add a new by-frame function, read_detections_per_frame_v2, on the IOUTracker class. This function improves a lot the matching speed between a tracker and a detection. It upgraded the method purposed by the original paper. It allowed the detection boxes of each frame recorded itself tracker IDs while in applying the IOU tracker algorithm.
+
+* Move the original caller of the IOUTracker object to the previous method (`__previous__`). Pointed the latest version of IOUTracker with the results annotated with Tracker IDs.
+
+### Bug Fixes and Other Changes
+
+* Updated the tutorial Jupyter notebook.
+
+* Add an assertion to make sure that the data type of UID in the ground truth or the prediction must be an integer or a string.
+
+* Fixed several bugs on the evaluation flow.
+
 ## Release 1.1.1
 
 ### Major Features and Improvements

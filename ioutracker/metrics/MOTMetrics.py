@@ -475,7 +475,7 @@ class EvaluateByFrame():
                    a list contains the BBox information on each frame like
                    [[X1, Y1, W, H, Prob.], [X1, Y1, W, H, Prob.]]
     """
-    if self.__requiredTracking:
+    if not self.__requiredTracking:
       raise Exception("You initialized the object with wrong parameters, requiredTracking must be True.")
 
     lenGT = 0 if np.array_equal(groundTruth, [[]]) else len(groundTruth)
@@ -934,6 +934,10 @@ def ExampleEvaluateMOTDatasets(labelFilePath, predictions=None,
       prediction = GTFrameInfo
     else:
       prediction = predictions[fid]
+    # label data type transformation
+    for gt in GTFrameInfo:
+      # transform the datatype of uid to an integer
+      gt[5] = int(gt[5])
     evalFrame(GTFrameInfo, prediction)
 
   metaRes = evalFrame.getMetricsMeta(printOnScreen=printOnScreen)

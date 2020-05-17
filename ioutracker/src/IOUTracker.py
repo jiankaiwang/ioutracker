@@ -256,6 +256,95 @@ class IOUTracker():
       new_track.add_detection(detection)
       self.active_tracks.append(new_track)
 
+  def read_detections_per_frame_v2(self, detections):
+    """read_detections_per_frame: start to parse the detections per frame.
+
+    Args:
+      detections: a list contains multiple detections per frame, each detection
+                  keeps [[bX, bY, bWidth, bHeight, visible], [], []]
+
+    Returns:
+      detections: the same list of the input one, but with a tracker ID at the
+                  end of each detection
+    """
+    if not self.__assignedTID:
+      raise Exception("The latest version requires setting assignedTID True.")
+
+    lenPred = 0 if np.array_equal(detections, []) or np.array_equal(detections, [[]]) \
+      else len(detections)
+
+    if lenPred > 0:
+      detections = np.array(detections)
+      detNums, detInfo = detections.shape
+      tidIdx = detInfo
+      # the flag -99 would be initialized value
+      tidInit = np.repeat(-99, repeats=detNums).reshape((-1, 1))
+      detections = np.concatenate((detections, tidInit), axis=-1)
+
+      unfitted_idx = detections[:, 4] < self.__detection_conf
+      # the flag -1 would be unfitted detections
+      detections[unfitted_idx, tidIdx] = -1
+
+    for act_track in self.active_tracks:
+      # [bX, bY, bW, bH, visible] -> [bX, bY, bX+bW, bY+bH, visible]
+      act_track_last_obj = act_track.previous_detections()
+      act_track_last_obj = detections_transform(act_track_last_obj)
+
+      # it is necessary to process fittable detections
+      detections_iou = []
+      if lenPred > 0:
+        for detection in detections:
+          if detection[tidIdx] == -99:
+            # only consider the detection whose tid is not assigned
+            detections_iou.append(\
+              BBoxIOU(act_track_last_obj, detections_transform(detection)))
+          else:
+            # includes unfiited and already assigned
+            detections_iou.append(-1)
+
+      # detections_iou outputs might be (1) empty, (2) all -1, (3) at least one IOU >= 0.0
+      if len(detections_iou) < 1:
+        # solve no detection available, in other words, it is empty
+        detections_iou = [-1]
+      max_iou = np.max(detections_iou)
+
+      if max_iou >= self.__iou_threshold:
+        max_iou_idx = np.argmax(detections_iou)
+        act_track.add_detection(detections[max_iou_idx][:tidIdx])
+        detections[max_iou_idx][tidIdx] = act_track.tid
+      else:
+        if act_track.highest_score >= self.__track_min_conf and \
+          act_track.larger_than_min_t()[0]:
+          self.finished_tracks.append(act_track)
+        act_track.active = False
+
+    # remove the inactive tracks from the active_tracks list
+    # keep the active tracks in the list
+    self.active_tracks = [act_track for act_track in self.active_tracks if act_track.active]
+
+    # start a new track with the remained detections
+    if lenPred > 0:
+      for detection in detections:
+        if detection[tidIdx] == -99:
+          new_track = Track(min_t=self.__min_t)
+          new_track.tid = self.__tidIncrement
+          self.__tidIncrement += 1
+          new_track.add_detection(detection[:tidIdx])
+          self.active_tracks.append(new_track)
+          detection[tidIdx] = new_track.tid
+
+      detectionChecks = detections[:, tidIdx] == -99
+      unprocessedDetections = detectionChecks.astype('int').sum()
+      assert unprocessedDetections == 0, \
+        "At least {} detections were not correctly processed.".format(unprocessedDetections)
+
+      # type transformation
+      detections = detections.tolist()
+      for detection in detections:
+        detection[-1] = int(detection[-1])
+
+    return detections
+
   def get_active_tracks(self):
     """get_active_tracks gets the current active tracks.
 
@@ -296,7 +385,7 @@ class IOUTracker():
     """Delete this object."""
     self.__releaseUsr()
 
-  def __call__(self, detections, returnFinishedTrackers=False):
+  def __previous__(self, detections, returnFinishedTrackers=False):
     """Runs the IOU tracker algorithm across the consecutive frames.
 
     Args:
@@ -356,6 +445,78 @@ class IOUTracker():
                           "numFrames": total_t,
                           "largerThanMinT": larger_than_t}
         detectionMapping.append(detectionRes)
+
+    finishedTrackers = []
+    if returnFinishedTrackers:
+      for finished in self.get_finished_tracks():
+        larger_than_t, total_t = finished.larger_than_min_t()
+        finishedRes = {"ftid": finished.tid,
+                       "numFrames": total_t,
+                       "largerThanMinT": larger_than_t}
+        finishedTrackers.append(finishedRes)
+
+    return detectionMapping, finishedTrackers
+
+  def __call__(self, detections, returnFinishedTrackers=False, runPreviousVersion=False):
+    """Runs the IOU tracker algorithm across the consecutive frames.
+
+    Args:
+      detections: a list contains multiple detections per frame, each detection
+                  keeps [[bX, bY, bWidth, bHeight, visible], [], []]
+
+      returnFinishedTrackers: a bool for returning finished trackers
+
+      runPreviousVersion: whether to run the previous version of IOUTracker algorithm.
+
+    Returns:
+      detectionMapping: a list contains multiple dictionary-structure objects
+                        representing each detection, the order of those objects
+                        is the same to the detection, the prototype is like
+
+                        [{"tid": value, "numFrames": value, "largerThanMinT": Bool}]
+
+                        in which numFrames is the number of objects in the history
+                        , and largerThanMinT is a bool value for the numFrames larger
+                        than min_t, if tid == -1, it represents this detection is
+                        unassigned
+      finishedTrackers: (optional)
+                        a list contains multiple dictionary-structure objects
+                        representing each finished tracks, the prototype is like
+
+                        [{"ftid": value, "numFrames": value, "largerThanMinT": Bool}]
+
+                        in which the finishedTrackers is similar to the detectionMapping
+                        , the difference are that in finishedTrackers ftid is
+                        finished tid and finishedTrackers keeps all finished
+                        trackers from the beginning
+    """
+
+    if runPreviousVersion:
+      logging.info("You selected running the previous version of IOUTracker algorithm.")
+      return self.__previous__(detections, returnFinishedTrackers)
+
+    # run the IOU trackers
+    detections = self.read_detections_per_frame_v2(detections)
+    active_tracks = self.get_active_tracks()
+    detectionMapping = []
+
+    lenPred = 0 if np.array_equal(detections, []) or np.array_equal(detections, [[]]) else len(detections)
+    if lenPred > 0:
+      for detection in detections:
+        tid = detection[-1]
+        if tid != -1:
+          for active_track in active_tracks:
+            if tid == active_track.tid:
+              larger_than_t, total_t = active_track.larger_than_min_t()
+              detectionMapping.append({"tid": tid,
+                                       "numFrames": total_t,
+                                       "largerThanMinT": larger_than_t})
+        else:
+          # tid == -1
+          detectionMapping.append({"tid": tid,
+                                   "numFrames": 0,
+                                   "largerThanMinT": False})
+
 
     finishedTrackers = []
     if returnFinishedTrackers:

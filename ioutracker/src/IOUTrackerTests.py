@@ -60,12 +60,19 @@ class FuncTest(unittest.TestCase):
 
     iouTracker = IOUTracker()
     for case, det, finished in zip(testCases, testDetRes, testFinisheds):
-      detected_tracks, finished_tracks = iouTracker(case, returnFinishedTrackers=True)
-
+      detected_tracks, finished_tracks = iouTracker(case, returnFinishedTrackers=True, runPreviousVersion=True)
       assert np.array_equiv(np.array(det), np.array(detected_tracks)), \
-        "(Active Tracks) Result {} is not the same to {}.".format(det, detected_tracks)
+        "[Previous] (Active Tracks) Result \n{} \nis not the same to\n {}.".format(det, detected_tracks)
       assert np.array_equiv(np.array(finished), np.array(finished_tracks)), \
-        "(Finished Tracks) Result {} is not the same to {}.".format(finished, finished_tracks)
+        "[Previous] (Finished Tracks) Result \n{} \nis not the same to\n {}.".format(finished, finished_tracks)
+
+    iouTracker = IOUTracker()
+    for case, det, finished in zip(testCases, testDetRes, testFinisheds):
+      detected_tracks, finished_tracks = iouTracker(case, returnFinishedTrackers=True)
+      assert np.array_equiv(np.array(det), np.array(detected_tracks)), \
+        "[Latest] (Active Tracks) Result \n{} \nis not the same to\n {}.".format(det, detected_tracks)
+      assert np.array_equiv(np.array(finished), np.array(finished_tracks)), \
+        "[Latest] (Finished Tracks) Result \n{} \nis not the same to\n {}.".format(finished, finished_tracks)
 
 # In[]
 
