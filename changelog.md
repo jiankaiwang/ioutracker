@@ -1,5 +1,17 @@
 # Change Log
 
+## Release 1.2.1
+
+### Major Features and Improvements
+
+* Update the tutorial.
+
+### Bug Fixes and Other Changes
+
+* Clearify the flow on the evaluating frame by frame.
+
+* Fix several bugs on evaluating metrics.
+
 ## Release 1.2.0
 
 ### Major Features and Improvements

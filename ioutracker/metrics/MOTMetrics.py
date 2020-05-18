@@ -427,7 +427,6 @@ class EvaluateByFrame():
   __iouTracker = None
   __gtTrajectoryDict = {}  # {uid: GTTrajectory.Object}
   __filteredProbability = 0.0
-  __tidCount = 1
   __requiredTracking = True
 
   def __init__(self, detection_conf=0.2, iouThreshold=0.2, min_t = 1,
@@ -459,11 +458,10 @@ class EvaluateByFrame():
     if self.__requiredTracking:
       self.__filteredProbability = detection_conf
       self.__iouTracker = IOUTracker(detection_conf=detection_conf,
-                                                iou_threshold=iouThreshold,
-                                                min_t=min_t,
-                                                track_min_conf=track_min_conf)
-      # start index of the tracker is 1
-      self.__tidCount = 1
+                                     iou_threshold=iouThreshold,
+                                     min_t=min_t,
+                                     track_min_conf=track_min_conf,
+                                     assignedTID=True)
 
   def __call__(self, groundTruth, prediction):
     """Run the whole flow.
@@ -492,6 +490,10 @@ class EvaluateByFrame():
 
     if lenGT > 0 and lenPred > 0:
       # make a hungarian distribution
+      # groundTruth contains the ground truth with its self UID, or the GT trajectory
+      # addedDetections represents the information to the tracker ID
+      # the connection between the ground truth and the prediction is the filterPreds
+      # rows: filterPreds, cols: ground truth      
       iouTable, assignmentTable = self.__hungarian(groundTruth, filterPreds)
 
       # get the number of TP, FP, and FN
@@ -511,23 +513,11 @@ class EvaluateByFrame():
       activeTracks = self.__iouTracker.get_active_tracks()
       addedDetections = []
       for track in activeTracks:
-        if not track.tid:
-          track.tid = self.__tidCount
-          self.__tidCount += 1
         # get all added detections
         addedDetections.append(track.previous_detections())
       assert len(addedDetections) == len(filterPreds), \
         "The number of detections ({}) is not the same to the number of filtered prediction ({}).".format(\
         len(addedDetections),len(filterPreds))
-
-    if lenGT > 0 and lenPred > 0:
-      # groundTruth contains the ground truth with its self UID, or the GT trajectory
-      # addedDetections represents the information to the tracker ID
-      # the connection between the ground truth and the prediction is the filterPreds
-      # rows: filterPreds, cols: ground truth
-      tableGTFilter = assignmentTable
-
-    if lenPred > 0:
       # rows: addedDetections, cols: filterPreds
       _, tableFilterAdded = self.__hungarian(filterPreds, addedDetections)
 
@@ -548,7 +538,7 @@ class EvaluateByFrame():
           self.__gtTrajectoryDict[gtUID] = newGTTrajectory
 
         if lenPred > 0:
-          gtSeries = tableGTFilter.loc[:, gtIdx]
+          gtSeries = assignmentTable.loc[:, gtIdx]
           gt2Preds = (gtSeries == 1)
           gt2PredsAvail = gt2Preds.astype('int').sum() > 0
 
@@ -570,9 +560,6 @@ class EvaluateByFrame():
 
         # the ground truth trajectory was processed
         self.__gtTrajectoryDict[gtUID].frameCheck = True
-    else:
-      # unnecessary matching a tracker ID when it is no ground truth available
-      pass
 
     # the ground truth is not processed, this causes a fragment
     # in other words, no ground truth object is added to the trajectory
@@ -842,10 +829,10 @@ class EvaluateByFrame():
     fn = metaRes["FN"]
     fp = metaRes["FP"]
     gt = metaRes["GT"]
-    recall = tp / (tp + fn)
-    precision = tp / (tp + fp)
-    accuracy = tp / gt
-    f1score = 2 * (recall * precision) / (recall + precision)
+    recall = tp / (tp + fn + 1e-8)
+    precision = tp / (tp + fp + 1e-8)
+    accuracy = tp / (gt + 1e-8)
+    f1score = 2 * (recall * precision) / (recall + precision + 1e-8)
 
     if printOnScreen:
       print("Recall: {:3.3f}%".format(recall * 100))
